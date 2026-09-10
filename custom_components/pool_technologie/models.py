@@ -4,16 +4,6 @@
 # même liste de registres pour les trois modèles, seul le nom affiché change.
 _COMMON_SENSORS = [
     {
-        "name": "Taille du bassin",
-        "translation_key": "taille_bassin",
-        "unique_id": "taille_bassin",
-        "address": 4111,
-        "unit": "m³",
-        "scale": 1,
-        "precision": 0,
-        "icon": "mdi:texture-box"
-    },
-    {
         "name": "pH",
         "translation_key": "ph",
         "unique_id": "ph",

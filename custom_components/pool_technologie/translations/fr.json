@@ -69,6 +69,12 @@
       },
       "consigne_electrolyse": {
         "name": "Consigne électrolyse"
+      },
+      "concentration_correcteur_ph": {
+        "name": "Concentration correcteur de pH"
+      },
+      "taille_bassin": {
+        "name": "Taille du bassin"
       }
     },
     "binary_sensor": {
