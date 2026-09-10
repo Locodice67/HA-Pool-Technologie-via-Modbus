@@ -106,6 +106,29 @@ _TENSION_CELLULE = {
     "max_valid": 30000
 }
 
+# Diagnostics cellule supplémentaires, issus de l'issue #4 (électrolyseur RACER,
+# même plateforme Modbus) — lecture seule, non confirmés sur les autres modèles.
+# Courant (1062) et puissance (1063) ne sont pas repris : ils renvoient 0 en
+# permanence sur le Just Salt Pro (non renseignés) et ne sont donc pas confirmés.
+_HEURES_FONCTIONNEMENT = {
+    "name": "Heures de fonctionnement",
+    "translation_key": "heures_fonctionnement",
+    "unique_id": "heures_fonctionnement",
+    "address": 4463,
+    "unit": "h",
+    "scale": 1,
+    "precision": 0,
+    "icon": "mdi:timer-outline",
+    "entity_category": "diagnostic",
+    "min_valid": 0,
+    "max_valid": 100000
+}
+
+_CELL_DIAGNOSTICS = [
+    _TENSION_CELLULE,
+    _HEURES_FONCTIONNEMENT,
+]
+
 MODELS = {
     "ibasel_duo": {
         "name": "Ibiza iBasel Duo",
@@ -113,17 +136,20 @@ MODELS = {
     },
     "waterair_salt_gold_duo": {
         "name": "WaterAir Salt Gold Duo",
-        "sensors": _COMMON_SENSORS + [_TENSION_CELLULE]
+        "sensors": _COMMON_SENSORS + _CELL_DIAGNOSTICS,
+        "supports_cell_diagnostics": True
     },
     "poolsquad_uv": {
         "name": "Poolsquad UV",
-        "sensors": _COMMON_SENSORS + [_TENSION_CELLULE],
+        "sensors": _COMMON_SENSORS + _CELL_DIAGNOSTICS,
+        "supports_cell_diagnostics": True,
         # Consigne électrolyse (registre 4168) confirmée fonctionnelle sur ce modèle par un
         # utilisateur HACS (Pierre_Brdn) sans sonde ORP. Non confirmée sur les autres modèles.
         "supports_electrolysis_setpoint": True
     },
     "just_salt_pro": {
         "name": "Just Salt Pro",
-        "sensors": _COMMON_SENSORS + [_TENSION_CELLULE]
+        "sensors": _COMMON_SENSORS + _CELL_DIAGNOSTICS,
+        "supports_cell_diagnostics": True
     }
 }
