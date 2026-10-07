@@ -1,201 +1,120 @@
+"""Switch platform for the Pool Technologie integration."""
+
 import asyncio
-import logging
+import time
 
 from homeassistant.components.switch import SwitchEntity
+from homeassistant.exceptions import HomeAssistantError
 
-from .const import DOMAIN
+from .const import DOMAIN, WRITE_THROTTLE_SECONDS, WRITE_VERIFY_DELAY
+from .entity import PoolEntity
 from .models import MODELS
+from .registers import REG_BOOST_DURATION, REG_BOOST_FLAG, REG_PH_AUTO
 
-_LOGGER = logging.getLogger(__name__)
+_BOOST_DURATION_MINUTES = 1440  # 24 hours
 
-_BOOST_DURATION_REG = 4188
-_BOOST_FLAG_REG = 4182
-_BOOST_DURATION_MINUTES = 1440  # 24h
+# Each switch describes the register used to read its state and the write
+# sequence applied to turn it on or off.
+SWITCH_CONFIGS = (
+    {
+        "translation_key": "boost",
+        "unique_id": "boost",
+        "icon": "mdi:rocket-launch",
+        "read_address": REG_BOOST_DURATION,
+        "on": ((REG_BOOST_DURATION, _BOOST_DURATION_MINUTES), (REG_BOOST_FLAG, 256)),
+        "off": ((REG_BOOST_DURATION, 0),),
+        "verify_on": _BOOST_DURATION_MINUTES,
+        "verify_off": 0,
+        "extra_attributes": {
+            "modbus_address": REG_BOOST_DURATION,
+            "modbus_flag_address": REG_BOOST_FLAG,
+        },
+    },
+    {
+        "translation_key": "ph_auto",
+        "unique_id": "ph_auto",
+        "icon": "mdi:tune",
+        "read_address": REG_PH_AUTO,
+        "on": ((REG_PH_AUTO, 1),),
+        "off": ((REG_PH_AUTO, 0),),
+        "verify_on": 1,
+        "verify_off": 0,
+        "extra_attributes": {"modbus_address": REG_PH_AUTO},
+    },
+)
 
-_PH_AUTO_REG = 4200
 
 async def async_setup_entry(hass, config_entry, async_add_entities):
-    controller = hass.data[DOMAIN][config_entry.entry_id]["controller"]
-    model_label = MODELS[config_entry.data["model"]]["name"]
-    handler = controller.handler
+    data = hass.data[DOMAIN][config_entry.entry_id]
+    coordinator = data["coordinator"]
+    model_label = MODELS[data["model"]]["name"]
 
-    async_add_entities([
-        BoostSwitch(hass, handler, controller, config_entry.entry_id, model_label),
-        PHAutoSwitch(hass, handler, controller, config_entry.entry_id, model_label),
-    ])
+    async_add_entities(
+        [
+            PoolSwitchEntity(coordinator, config_entry.entry_id, model_label, config)
+            for config in SWITCH_CONFIGS
+        ]
+    )
 
-class BoostSwitch(SwitchEntity):
-    def __init__(self, hass, handler, controller, entry_id, model_label):
-        self._hass = hass
-        self._handler = handler
-        self._controller = controller
-        self._entry_id = entry_id
-        self._model_label = model_label
 
-        self._attr_has_entity_name = True
-        self._attr_translation_key = "boost"
-        self._attr_icon = "mdi:rocket-launch"
-        self._attr_unique_id = f"{entry_id}_boost"
+class PoolSwitchEntity(PoolEntity, SwitchEntity):
+    """Config-driven switch backed by Modbus registers."""
+
+    def __init__(self, coordinator, entry_id, model_label, config):
+        super().__init__(coordinator, entry_id, model_label)
+        self._config = config
+        self._read_address = config["read_address"]
+        self._last_write = 0.0
+
+        self._attr_translation_key = config["translation_key"]
+        self._attr_unique_id = f"{entry_id}_{config['unique_id']}"
+        self._attr_icon = config.get("icon")
         self._attr_is_on = False
-        # Le rafraîchissement est piloté par le controller (même cycle que sensor.py),
-        # pas par le mécanisme de polling natif de HA : pas besoin que HA nous appelle aussi.
-        self._attr_should_poll = False
 
     @property
     def extra_state_attributes(self):
-        return {"modbus_address": _BOOST_DURATION_REG, "modbus_flag_address": _BOOST_FLAG_REG}
+        return dict(self._config.get("extra_attributes", {}))
 
     @property
-    def device_info(self):
-        return {
-            "identifiers": {(DOMAIN, self._entry_id)},
-            "name": self._model_label,
-            "manufacturer": "Pool Technologie",
-            "model": self._model_label,
-        }
+    def is_on(self) -> bool:
+        raw = self._raw(self._read_address)
+        if raw is None:
+            return self._attr_is_on
+        self._attr_is_on = raw > 0
+        return self._attr_is_on
 
-    async def async_added_to_hass(self):
-        await self._async_poll_refresh()
-        self._controller.add_poll_listener(self._async_poll_refresh)
+    async def _apply(self, operations, verify_value):
+        now = time.monotonic()
+        if now - self._last_write < WRITE_THROTTLE_SECONDS:
+            raise HomeAssistantError(
+                f"Switch write throttled: another write was issued less than "
+                f"{WRITE_THROTTLE_SECONDS}s ago"
+            )
+        self._last_write = now
 
-    async def async_will_remove_from_hass(self):
-        self._controller.remove_poll_listener(self._async_poll_refresh)
+        handler = self.coordinator.handler
+        for address, value in operations:
+            if not await self.hass.async_add_executor_job(
+                handler.write_register, address, value
+            ):
+                raise HomeAssistantError(f"Failed to write register {address}")
 
-    async def _async_poll_refresh(self) -> bool:
-        result = await self._hass.async_add_executor_job(
-            self._handler.read_register, _BOOST_DURATION_REG
+        await asyncio.sleep(WRITE_VERIFY_DELAY)
+        verified = await self.hass.async_add_executor_job(
+            handler.read_register_verified, self._read_address, verify_value
         )
-        if result is None:
-            return False
-        self._attr_is_on = result[0] > 0
+        if not verified:
+            raise HomeAssistantError(
+                f"Switch state not confirmed by the device (register "
+                f"{self._read_address})"
+            )
+
+        self._attr_is_on = verify_value > 0
         self.async_write_ha_state()
-        return True
+        await self.coordinator.async_request_refresh()
 
     async def async_turn_on(self, **kwargs):
-        ok = await self._hass.async_add_executor_job(
-            self._handler.write_register, _BOOST_DURATION_REG, _BOOST_DURATION_MINUTES
-        )
-        if not ok:
-            _LOGGER.warning("Échec d'écriture de la durée du mode boost")
-            return
-
-        ok = await self._hass.async_add_executor_job(
-            self._handler.write_register, _BOOST_FLAG_REG, 256
-        )
-        if not ok:
-            _LOGGER.warning("Échec d'écriture du drapeau du mode boost")
-            return
-
-        await asyncio.sleep(0.5)
-        verified = await self._hass.async_add_executor_job(
-            self._handler.read_register_verified, _BOOST_DURATION_REG, _BOOST_DURATION_MINUTES
-        )
-        if not verified:
-            _LOGGER.warning("Activation du mode boost non confirmée par l'appareil")
-            return
-
-        self._attr_is_on = True
-        self.async_write_ha_state()
+        await self._apply(self._config["on"], self._config["verify_on"])
 
     async def async_turn_off(self, **kwargs):
-        ok = await self._hass.async_add_executor_job(
-            self._handler.write_register, _BOOST_DURATION_REG, 0
-        )
-        if not ok:
-            _LOGGER.warning("Échec de la désactivation du mode boost")
-            return
-
-        await asyncio.sleep(0.5)
-        verified = await self._hass.async_add_executor_job(
-            self._handler.read_register_verified, _BOOST_DURATION_REG, 0
-        )
-        if not verified:
-            _LOGGER.warning("Désactivation du mode boost non confirmée par l'appareil")
-            return
-
-        self._attr_is_on = False
-        self.async_write_ha_state()
-
-
-class PHAutoSwitch(SwitchEntity):
-    def __init__(self, hass, handler, controller, entry_id, model_label):
-        self._hass = hass
-        self._handler = handler
-        self._controller = controller
-        self._entry_id = entry_id
-        self._model_label = model_label
-
-        self._attr_has_entity_name = True
-        self._attr_translation_key = "ph_auto"
-        self._attr_icon = "mdi:tune"
-        self._attr_unique_id = f"{entry_id}_ph_auto"
-        self._attr_is_on = False
-        self._attr_should_poll = False
-
-    @property
-    def extra_state_attributes(self):
-        return {"modbus_address": _PH_AUTO_REG}
-
-    @property
-    def device_info(self):
-        return {
-            "identifiers": {(DOMAIN, self._entry_id)},
-            "name": self._model_label,
-            "manufacturer": "Pool Technologie",
-            "model": self._model_label,
-        }
-
-    async def async_added_to_hass(self):
-        await self._async_poll_refresh()
-        self._controller.add_poll_listener(self._async_poll_refresh)
-
-    async def async_will_remove_from_hass(self):
-        self._controller.remove_poll_listener(self._async_poll_refresh)
-
-    async def _async_poll_refresh(self) -> bool:
-        result = await self._hass.async_add_executor_job(
-            self._handler.read_register, _PH_AUTO_REG
-        )
-        if result is None:
-            return False
-        self._attr_is_on = result[0] > 0
-        self.async_write_ha_state()
-        return True
-
-    async def async_turn_on(self, **kwargs):
-        ok = await self._hass.async_add_executor_job(
-            self._handler.write_register, _PH_AUTO_REG, 1
-        )
-        if not ok:
-            _LOGGER.warning("Échec d'activation de la régulation pH automatique")
-            return
-
-        await asyncio.sleep(0.5)
-        verified = await self._hass.async_add_executor_job(
-            self._handler.read_register_verified, _PH_AUTO_REG, 1
-        )
-        if not verified:
-            _LOGGER.warning("Activation de la régulation pH automatique non confirmée par l'appareil")
-            return
-
-        self._attr_is_on = True
-        self.async_write_ha_state()
-
-    async def async_turn_off(self, **kwargs):
-        ok = await self._hass.async_add_executor_job(
-            self._handler.write_register, _PH_AUTO_REG, 0
-        )
-        if not ok:
-            _LOGGER.warning("Échec de la désactivation de la régulation pH automatique")
-            return
-
-        await asyncio.sleep(0.5)
-        verified = await self._hass.async_add_executor_job(
-            self._handler.read_register_verified, _PH_AUTO_REG, 0
-        )
-        if not verified:
-            _LOGGER.warning("Désactivation de la régulation pH automatique non confirmée par l'appareil")
-            return
-
-        self._attr_is_on = False
-        self.async_write_ha_state()
+        await self._apply(self._config["off"], self._config["verify_off"])

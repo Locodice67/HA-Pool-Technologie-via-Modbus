@@ -1,287 +1,217 @@
+"""Number platform for the Pool Technologie integration."""
+
 import asyncio
-import logging
+import time
 
 from homeassistant.components.number import NumberEntity
 from homeassistant.const import UnitOfElectricPotential
+from homeassistant.exceptions import HomeAssistantError
 
+from .const import (
+    CONF_REGULATION_ORP,
+    DOMAIN,
+    WRITE_THROTTLE_SECONDS,
+    WRITE_VERIFY_DELAY,
+)
+from .entity import PoolEntity
 from .models import MODELS
-from .const import DOMAIN, CONF_REGULATION_ORP
+from .registers import (
+    REG_CELL_INVERSION_HOURS,
+    REG_ELECTROLYSIS_SETPOINT,
+    REG_ORP_SETPOINT,
+    REG_PH_CORRECTOR,
+    REG_PH_SETPOINT,
+    REG_POOL_SIZE,
+)
 
-_LOGGER = logging.getLogger(__name__)
+# `requires` selects when an entity is created:
+#   "orp"              -> ORP regulation enabled
+#   "electrolysis"     -> model exposes an electrolysis setpoint, manual mode only
+#   "cell_diagnostics" -> model supports cell diagnostics
+NUMBER_CONFIGS = (
+    {
+        "translation_key": "consigne_ph",
+        "unique_id": "consigne_ph",
+        "address": REG_PH_SETPOINT,
+        "unit": "pH",
+        "icon": "mdi:cog",
+        "min": 6.0,
+        "max": 8.5,
+        "step": 0.1,
+        "default": 7.2,
+        "scale": 0.000390625,
+        "precision": 2,
+        "tolerance": 1,
+    },
+    {
+        "translation_key": "consigne_orp",
+        "unique_id": "consigne_orp",
+        "address": REG_ORP_SETPOINT,
+        "unit": UnitOfElectricPotential.MILLIVOLT,
+        "icon": "mdi:cog",
+        "min": 400,
+        "max": 900,
+        "step": 10,
+        "default": 650,
+        "requires": "orp",
+    },
+    {
+        "translation_key": "consigne_electrolyse",
+        "unique_id": "consigne_electrolyse",
+        "address": REG_ELECTROLYSIS_SETPOINT,
+        "unit": "%",
+        "icon": "mdi:cog",
+        "min": 10,
+        "max": 100,
+        "step": 1,
+        "default": 20,
+        "requires": "electrolysis",
+    },
+    {
+        "translation_key": "concentration_correcteur_ph",
+        "unique_id": "concentration_correcteur_ph",
+        "address": REG_PH_CORRECTOR,
+        "unit": "%",
+        "icon": "mdi:flask-outline",
+        "min": 5,
+        "max": 50,
+        "step": 1,
+        "default": 15,
+        "precision": 1,
+    },
+    {
+        "translation_key": "taille_bassin",
+        "unique_id": "taille_bassin",
+        "address": REG_POOL_SIZE,
+        "unit": "m³",
+        "icon": "mdi:texture-box",
+        "min": 1,
+        "max": 250,
+        "step": 1,
+        "default": 30,
+    },
+    {
+        "translation_key": "heure_inversion_cellule",
+        "unique_id": "heure_inversion_cellule",
+        "address": REG_CELL_INVERSION_HOURS,
+        "unit": "h",
+        "icon": "mdi:swap-horizontal",
+        "min": 1,
+        "max": 24,
+        "step": 1,
+        "default": 4,
+        "requires": "cell_diagnostics",
+    },
+)
+
+
+def _is_required(config, model_info, regulation_orp) -> bool:
+    requires = config.get("requires")
+    if requires == "orp":
+        return regulation_orp
+    if requires == "electrolysis":
+        return (
+            bool(model_info.get("supports_electrolysis_setpoint"))
+            and not regulation_orp
+        )
+    if requires == "cell_diagnostics":
+        return bool(model_info.get("supports_cell_diagnostics"))
+    return True
+
 
 async def async_setup_entry(hass, config_entry, async_add_entities):
-    controller = hass.data[DOMAIN][config_entry.entry_id]["controller"]
-    model_key = config_entry.data["model"]
+    data = hass.data[DOMAIN][config_entry.entry_id]
+    coordinator = data["coordinator"]
+    model_key = data["model"]
     model_label = MODELS[model_key]["name"]
-    handler = controller.handler
+    model_info = MODELS[model_key]
 
     regulation_orp = config_entry.options.get(
         CONF_REGULATION_ORP, config_entry.data.get(CONF_REGULATION_ORP, False)
     )
 
-    entities = [PHSetpointEntity(hass, handler, controller, config_entry.entry_id, model_label)]
-    if regulation_orp:
-        entities.append(ORPSetpointEntity(hass, handler, controller, config_entry.entry_id, model_label))
-    # Consigne électrolyse : uniquement confirmée sur les modèles qui l'exposent (cf. models.py),
-    # et seulement en régulation manuelle — sans sonde ORP, qui pilote sinon l'électrolyse automatiquement.
-    if MODELS[model_key].get("supports_electrolysis_setpoint") and not regulation_orp:
-        entities.append(ElectrolysisSetpointEntity(hass, handler, controller, config_entry.entry_id, model_label))
+    entities = [
+        PoolNumberEntity(coordinator, config_entry.entry_id, model_label, config)
+        for config in NUMBER_CONFIGS
+        if _is_required(config, model_info, regulation_orp)
+    ]
     async_add_entities(entities)
 
-class ORPSetpointEntity(NumberEntity):
-    def __init__(self, hass, handler, controller, entry_id, model_label):
-        self._hass = hass
-        self._handler = handler
-        self._controller = controller
-        self._entry_id = entry_id
-        self._model_label = model_label
-        self._address = 4235
 
-        self._attr_translation_key = "consigne_orp"
-        self._attr_has_entity_name = True
-        self._attr_entity_category = None
-        self._attr_icon = "mdi:cog"
-        self._attr_unique_id = f"{entry_id}_consigne_orp"
-        self._attr_native_unit_of_measurement = UnitOfElectricPotential.MILLIVOLT
-        self._attr_mode = "box"
-        self._attr_native_value = 650
-        # Le rafraîchissement est piloté par le controller (même cycle que sensor.py),
-        # pas par le mécanisme de polling natif de HA.
-        self._attr_should_poll = False
+class PoolNumberEntity(PoolEntity, NumberEntity):
+    """Config-driven number entity with write verification and throttling."""
 
-    @property
-    def native_min_value(self):
-        return 400
+    _attr_mode = "box"
 
-    @property
-    def native_max_value(self):
-        return 900
+    def __init__(self, coordinator, entry_id, model_label, config):
+        super().__init__(coordinator, entry_id, model_label)
+        self._config = config
+        self._address = config["address"]
+        self._scale = config.get("scale", 1)
+        self._precision = config.get("precision", 0)
+        self._tolerance = config.get("tolerance", 0)
+        self._last_write = 0.0
 
-    @property
-    def native_step(self):
-        return 10
+        self._attr_translation_key = config["translation_key"]
+        self._attr_unique_id = f"{entry_id}_{config['unique_id']}"
+        self._attr_icon = config.get("icon", "mdi:cog")
+        self._attr_native_unit_of_measurement = config.get("unit")
+        self._attr_native_min_value = config["min"]
+        self._attr_native_max_value = config["max"]
+        self._attr_native_step = config.get("step", 1)
+        self._attr_native_value = config.get("default")
 
     @property
     def extra_state_attributes(self):
         return {"modbus_address": self._address}
 
     @property
-    def device_info(self):
-        return {
-            "identifiers": {(DOMAIN, self._entry_id)},
-            "name": self._model_label,
-            "manufacturer": "Pool Technologie",
-            "model": self._model_label,
-        }
+    def native_value(self):
+        raw = self._raw(self._address)
+        if raw is None:
+            return self._attr_native_value
 
-    async def async_added_to_hass(self):
-        await self._async_poll_refresh()
-        self._controller.add_poll_listener(self._async_poll_refresh)
+        value = round(raw * self._scale, self._precision)
+        # Out-of-range value (device off, or an aberrant read): keep the last
+        # known good value instead of showing nonsense.
+        if not (self._attr_native_min_value <= value <= self._attr_native_max_value):
+            return self._attr_native_value
 
-    async def async_will_remove_from_hass(self):
-        self._controller.remove_poll_listener(self._async_poll_refresh)
-
-    async def _async_poll_refresh(self) -> bool:
-        result = await self._hass.async_add_executor_job(self._handler.read_register, self._address)
-        if result is None:
-            return False
-        value = int(result[0])
-        # Valeur hors plage (appareil éteint ou lecture aberrante) : on ignore et on
-        # garde la dernière valeur connue plutôt que d'afficher n'importe quoi.
-        if not (self.native_min_value <= value <= self.native_max_value):
-            return False
         self._attr_native_value = value
-        self.async_write_ha_state()
-        return True
+        return value
+
+    def _encode(self, value):
+        return int(round(value / self._scale))
 
     async def async_set_native_value(self, value: float) -> None:
-        target = int(value)
-        ok = await self._hass.async_add_executor_job(
-            self._handler.write_register, self._address, target
-        )
-        if not ok:
-            _LOGGER.warning("Échec d'écriture de la consigne ORP (%s)", target)
-            return
+        now = time.monotonic()
+        if now - self._last_write < WRITE_THROTTLE_SECONDS:
+            raise HomeAssistantError(
+                f"Write to register {self._address} throttled: another write "
+                f"was issued less than {WRITE_THROTTLE_SECONDS}s ago"
+            )
+        self._last_write = now
 
-        await asyncio.sleep(0.5)
-        verified = await self._hass.async_add_executor_job(
-            self._handler.read_register_verified, self._address, target
+        raw = self._encode(value)
+        handler = self.coordinator.handler
+
+        if not await self.hass.async_add_executor_job(
+            handler.write_register, self._address, raw
+        ):
+            raise HomeAssistantError(
+                f"Failed to write register {self._address} (raw={raw})"
+            )
+
+        await asyncio.sleep(WRITE_VERIFY_DELAY)
+        verified = await self.hass.async_add_executor_job(
+            handler.read_register_verified, self._address, raw, 1, self._tolerance
         )
         if not verified:
-            _LOGGER.warning(
-                "Consigne ORP non confirmée par l'appareil après écriture (%s)", target
+            raise HomeAssistantError(
+                f"Register {self._address} not confirmed by the device after "
+                f"write (raw={raw})"
             )
-            return
-
-        self._attr_native_value = target
-        self.async_write_ha_state()
-
-class ElectrolysisSetpointEntity(NumberEntity):
-    def __init__(self, hass, handler, controller, entry_id, model_label):
-        self._hass = hass
-        self._handler = handler
-        self._controller = controller
-        self._entry_id = entry_id
-        self._model_label = model_label
-        self._address = 4168
-
-        self._attr_translation_key = "consigne_electrolyse"
-        self._attr_has_entity_name = True
-        self._attr_entity_category = None
-        self._attr_icon = "mdi:cog"
-        self._attr_unique_id = f"{entry_id}_consigne_electrolyse"
-        self._attr_native_unit_of_measurement = "%"
-        self._attr_mode = "box"
-        self._attr_native_value = 20
-        self._attr_should_poll = False
-
-    @property
-    def native_min_value(self):
-        return 10
-
-    @property
-    def native_max_value(self):
-        return 100
-
-    @property
-    def native_step(self):
-        return 1
-
-    @property
-    def extra_state_attributes(self):
-        return {"modbus_address": self._address}
-
-    @property
-    def device_info(self):
-        return {
-            "identifiers": {(DOMAIN, self._entry_id)},
-            "name": self._model_label,
-            "manufacturer": "Pool Technologie",
-            "model": self._model_label,
-        }
-
-    async def async_added_to_hass(self):
-        await self._async_poll_refresh()
-        self._controller.add_poll_listener(self._async_poll_refresh)
-
-    async def async_will_remove_from_hass(self):
-        self._controller.remove_poll_listener(self._async_poll_refresh)
-
-    async def _async_poll_refresh(self) -> bool:
-        result = await self._hass.async_add_executor_job(self._handler.read_register, self._address)
-        if result is None:
-            return False
-        value = int(result[0])
-        if not (self.native_min_value <= value <= self.native_max_value):
-            return False
-        self._attr_native_value = value
-        self.async_write_ha_state()
-        return True
-
-    async def async_set_native_value(self, value: float) -> None:
-        target = int(value)
-        ok = await self._hass.async_add_executor_job(
-            self._handler.write_register, self._address, target
-        )
-        if not ok:
-            _LOGGER.warning("Échec d'écriture de la consigne électrolyse (%s)", target)
-            return
-
-        await asyncio.sleep(0.5)
-        verified = await self._hass.async_add_executor_job(
-            self._handler.read_register_verified, self._address, target
-        )
-        if not verified:
-            _LOGGER.warning(
-                "Consigne électrolyse non confirmée par l'appareil après écriture (%s)", target
-            )
-            return
-
-        self._attr_native_value = target
-        self.async_write_ha_state()
-
-class PHSetpointEntity(NumberEntity):
-    def __init__(self, hass, handler, controller, entry_id, model_label):
-        self._hass = hass
-        self._handler = handler
-        self._controller = controller
-        self._entry_id = entry_id
-        self._model_label = model_label
-        self._address = 4207
-        self._scale = 0.000390625
-
-        self._attr_translation_key = "consigne_ph"
-        self._attr_has_entity_name = True
-        self._attr_entity_category = None
-        self._attr_icon = "mdi:cog"
-        self._attr_unique_id = f"{entry_id}_consigne_ph"
-        self._attr_native_unit_of_measurement = "pH"
-        self._attr_mode = "box"
-        self._attr_native_value = 7.2
-        self._attr_should_poll = False
-
-    @property
-    def native_min_value(self):
-        return 6.0
-
-    @property
-    def native_max_value(self):
-        return 8.5
-
-    @property
-    def native_step(self):
-        return 0.1
-
-    @property
-    def extra_state_attributes(self):
-        return {"modbus_address": self._address}
-
-    @property
-    def device_info(self):
-        return {
-            "identifiers": {(DOMAIN, self._entry_id)},
-            "name": self._model_label,
-            "manufacturer": "Pool Technologie",
-            "model": self._model_label,
-        }
-
-    async def async_added_to_hass(self):
-        await self._async_poll_refresh()
-        self._controller.add_poll_listener(self._async_poll_refresh)
-
-    async def async_will_remove_from_hass(self):
-        self._controller.remove_poll_listener(self._async_poll_refresh)
-
-    async def _async_poll_refresh(self) -> bool:
-        result = await self._hass.async_add_executor_job(self._handler.read_register, self._address)
-        if result is None:
-            return False
-        value = round(result[0] * self._scale, 2)
-        if not (self.native_min_value <= value <= self.native_max_value):
-            return False
-        self._attr_native_value = value
-        self.async_write_ha_state()
-        return True
-
-    async def async_set_native_value(self, value: float) -> None:
-        raw = int(round(value / self._scale))
-        ok = await self._hass.async_add_executor_job(
-            self._handler.write_register, self._address, raw
-        )
-        if not ok:
-            _LOGGER.warning("Échec d'écriture de la consigne pH (raw=%s)", raw)
-            return
-
-        await asyncio.sleep(0.5)
-        # tolerance=1 car la conversion pH -> brut peut arrondir au LSB près
-        verified = await self._hass.async_add_executor_job(
-            self._handler.read_register_verified, self._address, raw, 1, 1
-        )
-        if not verified:
-            _LOGGER.warning(
-                "Consigne pH non confirmée par l'appareil après écriture (raw=%s)", raw
-            )
-            return
 
         self._attr_native_value = value
         self.async_write_ha_state()
+        await self.coordinator.async_request_refresh()

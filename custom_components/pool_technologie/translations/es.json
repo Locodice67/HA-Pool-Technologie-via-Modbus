@@ -10,13 +10,19 @@
           "unit_id": "Dirección Modbus",
           "model": "Modelo del electrolizador",
           "regulation_orp": "Regulación ORP (sonda ORP instalada)",
-          "scan_interval": "Intervalo de actualización (segundos)"
+          "flow_sensor": "Sensor de caudal instalado (detección de fallo de caudal)",
+          "scan_interval": "Intervalo de actualización (segundos)",
+          "timeout": "Tiempo de conexión (segundos)",
+          "framing": "Trama Modbus",
+          "ignore_connection_error": "Crear aunque el dispositivo no responda"
         }
       }
     },
     "error": {
       "cannot_connect": "No se pudo conectar al servidor Modbus TCP/IP",
-      "invalid_host": "Dirección IP no válida"
+      "cannot_read": "Conexión establecida pero la lectura Modbus falló",
+      "invalid_host": "Host no válido",
+      "unknown": "Error desconocido"
     },
     "abort": {
       "already_configured": "Este electrolizador ya está configurado"
@@ -28,7 +34,10 @@
         "title": "Opciones del electrolizador Pool Technologie",
         "data": {
           "regulation_orp": "Regulación ORP (sonda ORP instalada)",
-          "scan_interval": "Intervalo de actualización (segundos)"
+          "flow_sensor": "Sensor de caudal instalado (detección de fallo de caudal)",
+          "scan_interval": "Intervalo de actualización (segundos)",
+          "timeout": "Tiempo de conexión (segundos)",
+          "framing": "Trama Modbus"
         }
       }
     }
@@ -58,6 +67,15 @@
       },
       "tension_cellule": {
         "name": "Tensión de la célula"
+      },
+      "heures_fonctionnement": {
+        "name": "Horas de funcionamiento"
+      },
+      "boost_temps_restant": {
+        "name": "Tiempo restante de boost"
+      },
+      "modbus_stats": {
+        "name": "Diagnóstico Modbus"
       }
     },
     "number": {
@@ -69,11 +87,38 @@
       },
       "consigne_electrolyse": {
         "name": "Consigna de electrólisis"
+      },
+      "concentration_correcteur_ph": {
+        "name": "Concentración del corrector de pH"
+      },
+      "taille_bassin": {
+        "name": "Tamaño de la piscina"
+      },
+      "heure_inversion_cellule": {
+        "name": "Tiempo de inversión de célula"
       }
     },
     "binary_sensor": {
       "modbus_status": {
         "name": "Estado de la comunicación Modbus"
+      },
+      "production_active": {
+        "name": "Producción activa"
+      },
+      "alarme_defaut_cellule": {
+        "name": "Alarma de fallo de célula"
+      },
+      "alarme_manque_sel": {
+        "name": "Alarma de falta de sal"
+      },
+      "alarme_trop_sel": {
+        "name": "Alarma de exceso de sal"
+      },
+      "alarme_eau_froide": {
+        "name": "Alarma de seguridad de agua fría"
+      },
+      "alarme_debit_eau": {
+        "name": "Alarma de caudal de agua"
       }
     },
     "switch": {

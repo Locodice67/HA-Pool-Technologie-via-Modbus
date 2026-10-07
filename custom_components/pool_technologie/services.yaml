@@ -1,0 +1,33 @@
+read_register:
+  name: "Lire un registre Modbus"
+  description: >-
+    Lit un ou plusieurs registres de maintien de l'électrolyseur. Utilisé pour
+    le diagnostic lorsque la communication semble anormale.
+  fields:
+    address:
+      name: "Adresse"
+      description: "Adresse du premier registre à lire."
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 65535
+          mode: box
+    count:
+      name: "Nombre de registres"
+      description: "Nombre de registres consécutifs à lire (1 à 125)."
+      required: false
+      default: 1
+      selector:
+        number:
+          min: 1
+          max: 125
+          mode: box
+    entry_id:
+      name: "Identifiant de configuration"
+      description: >-
+        Optionnel. Si plusieurs électrolyseurs sont configurés, précise lequel
+        interroger. Par défaut, le premier.
+      required: false
+      selector:
+        text:

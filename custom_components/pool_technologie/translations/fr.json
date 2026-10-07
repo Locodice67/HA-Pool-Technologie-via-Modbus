@@ -10,13 +10,19 @@
           "unit_id": "Adresse Modbus",
           "model": "Modèle de l’électrolyseur",
           "regulation_orp": "Régulation ORP (sonde ORP installée)",
-          "scan_interval": "Intervalle de rafraîchissement (secondes)"
+          "flow_sensor": "Capteur de débit installé (détection défaut de débit)",
+          "scan_interval": "Intervalle de rafraîchissement (secondes)",
+          "timeout": "Délai de connexion (secondes)",
+          "framing": "Trame Modbus",
+          "ignore_connection_error": "Créer même si l’appareil ne répond pas"
         }
       }
     },
     "error": {
       "cannot_connect": "Impossible de se connecter au serveur Modbus TCP/IP",
-      "invalid_host": "Adresse IP invalide"
+      "cannot_read": "Connexion établie mais la lecture Modbus a échoué",
+      "invalid_host": "Hôte invalide",
+      "unknown": "Erreur inconnue"
     },
     "abort": {
       "already_configured": "Cet électrolyseur est déjà configuré"
@@ -28,7 +34,10 @@
         "title": "Options de l’électrolyseur Pool Technologie",
         "data": {
           "regulation_orp": "Régulation ORP (sonde ORP installée)",
-          "scan_interval": "Intervalle de rafraîchissement (secondes)"
+          "flow_sensor": "Capteur de débit installé (détection défaut de débit)",
+          "scan_interval": "Intervalle de rafraîchissement (secondes)",
+          "timeout": "Délai de connexion (secondes)",
+          "framing": "Trame Modbus"
         }
       }
     }
@@ -58,6 +67,15 @@
       },
       "tension_cellule": {
         "name": "Tension cellule"
+      },
+      "heures_fonctionnement": {
+        "name": "Heures de fonctionnement"
+      },
+      "boost_temps_restant": {
+        "name": "Temps restant boost"
+      },
+      "modbus_stats": {
+        "name": "Diagnostic Modbus"
       }
     },
     "number": {
@@ -69,11 +87,38 @@
       },
       "consigne_electrolyse": {
         "name": "Consigne électrolyse"
+      },
+      "concentration_correcteur_ph": {
+        "name": "Concentration correcteur de pH"
+      },
+      "taille_bassin": {
+        "name": "Taille du bassin"
+      },
+      "heure_inversion_cellule": {
+        "name": "Heure inversion cellule"
       }
     },
     "binary_sensor": {
       "modbus_status": {
         "name": "État de la communication Modbus"
+      },
+      "production_active": {
+        "name": "Production active"
+      },
+      "alarme_defaut_cellule": {
+        "name": "Alarme défaut cellule"
+      },
+      "alarme_manque_sel": {
+        "name": "Alarme manque de sel"
+      },
+      "alarme_trop_sel": {
+        "name": "Alarme trop de sel"
+      },
+      "alarme_eau_froide": {
+        "name": "Alarme sécurité eau froide"
+      },
+      "alarme_debit_eau": {
+        "name": "Alarme débit d'eau"
       }
     },
     "switch": {
