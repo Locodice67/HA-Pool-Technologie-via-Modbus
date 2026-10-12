@@ -13,6 +13,7 @@ CONF_TIMEOUT = "timeout"
 CONF_FRAMING = "framing"
 CONF_IGNORE_CONNECTION_ERROR = "ignore_connection_error"
 CONF_FLOW_SENSOR = "flow_sensor"
+CONF_HIVERNER = "hiverner"
 
 # Defaults
 SCAN_INTERVAL = 60

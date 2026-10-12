@@ -21,7 +21,11 @@ class PoolEntity(CoordinatorEntity[PoolDataCoordinator]):
     def available(self) -> bool:
         # CoordinatorEntity already checks last_update_success; also require at
         # least one successful read so a failed first poll is unavailable.
-        return self.coordinator.data is not None and super().available
+        return (
+            self.coordinator.data is not None
+            and not self.coordinator.hivernage
+            and super().available
+        )
 
     @property
     def device_info(self):

@@ -127,7 +127,7 @@ class ModbusStatusSensor(PoolEntity, BinarySensorEntity):
 
     @property
     def is_on(self) -> bool:
-        return self.coordinator.last_update_success
+        return self.coordinator.last_update_success and not self.coordinator.hivernage
 
 
 class PoolRegisterBinarySensor(PoolEntity, BinarySensorEntity):

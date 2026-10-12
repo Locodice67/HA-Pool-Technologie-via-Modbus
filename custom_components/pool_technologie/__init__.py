@@ -11,6 +11,7 @@ from homeassistant.helpers import config_validation as cv
 from .const import (
     CONF_FLOW_SENSOR,
     CONF_FRAMING,
+    CONF_HIVERNER,
     CONF_REGULATION_ORP,
     CONF_SCAN_INTERVAL,
     CONF_TIMEOUT,
@@ -75,12 +76,16 @@ async def async_setup_entry(hass, entry):
     flow_sensor = entry.options.get(
         CONF_FLOW_SENSOR, data.get(CONF_FLOW_SENSOR, False)
     )
+    hivernage = bool(
+        entry.options.get(CONF_HIVERNER, data.get(CONF_HIVERNER, False))
+    )
 
     coordinator = PoolDataCoordinator(
         hass,
         handler,
         scan_interval,
         build_polled_addresses(data["model"], regulation_orp, flow_sensor),
+        hivernage=hivernage,
     )
 
     hass.data[DOMAIN][entry.entry_id] = {

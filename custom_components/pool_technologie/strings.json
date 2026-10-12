@@ -33,6 +33,7 @@
       "init": {
         "title": "Pool Technologie electrolyser options",
         "data": {
+          "hiverner": "Wintering (stops Modbus communication)",
           "regulation_orp": "ORP regulation (ORP probe installed)",
           "flow_sensor": "Water flow sensor installed (flow fault detection)",
           "scan_interval": "Refresh interval (seconds)",
@@ -127,6 +128,9 @@
       },
       "ph_auto": {
         "name": "Automatic pH regulation"
+      },
+      "hivernage": {
+        "name": "Wintering"
       }
     }
   }

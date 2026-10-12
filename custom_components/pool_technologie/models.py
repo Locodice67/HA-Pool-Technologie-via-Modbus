@@ -4,6 +4,18 @@
 # même liste de registres pour les trois modèles, seul le nom affiché change.
 _COMMON_SENSORS = [
     {
+        "name": "Taille du bassin",
+        "translation_key": "taille_bassin",
+        "unique_id": "taille_bassin",
+        "address": 4111,
+        "unit": "m³",
+        "scale": 1,
+        "precision": 0,
+        "icon": "mdi:texture-box",
+        "min_valid": 0,
+        "max_valid": 250
+    },
+    {
         "name": "pH",
         "translation_key": "ph",
         "unique_id": "ph",
@@ -155,7 +167,7 @@ MODELS = {
     },
     "just_salt_pro": {
         "name": "Just Salt Pro",
-        "sensors": _COMMON_SENSORS + _CELL_DIAGNOSTICS,
+        "sensors": _COMMON_SENSORS + [_HEURES_FONCTIONNEMENT],
         "supports_cell_diagnostics": True
     }
 }

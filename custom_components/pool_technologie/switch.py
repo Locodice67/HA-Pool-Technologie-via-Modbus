@@ -6,7 +6,7 @@ import time
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.exceptions import HomeAssistantError
 
-from .const import DOMAIN, WRITE_THROTTLE_SECONDS, WRITE_VERIFY_DELAY
+from .const import CONF_HIVERNER, DOMAIN, WRITE_THROTTLE_SECONDS, WRITE_VERIFY_DELAY
 from .entity import PoolEntity
 from .models import MODELS
 from .registers import REG_BOOST_DURATION, REG_BOOST_FLAG, REG_PH_AUTO
@@ -46,15 +46,18 @@ SWITCH_CONFIGS = (
 
 async def async_setup_entry(hass, config_entry, async_add_entities):
     data = hass.data[DOMAIN][config_entry.entry_id]
+    entry = data["entry"]
     coordinator = data["coordinator"]
     model_label = MODELS[data["model"]]["name"]
 
-    async_add_entities(
-        [
-            PoolSwitchEntity(coordinator, config_entry.entry_id, model_label, config)
-            for config in SWITCH_CONFIGS
-        ]
+    entities = [
+        PoolSwitchEntity(coordinator, config_entry.entry_id, model_label, config)
+        for config in SWITCH_CONFIGS
+    ]
+    entities.append(
+        PoolHivernageSwitch(coordinator, entry, config_entry.entry_id, model_label)
     )
+    async_add_entities(entities)
 
 
 class PoolSwitchEntity(PoolEntity, SwitchEntity):
@@ -118,3 +121,46 @@ class PoolSwitchEntity(PoolEntity, SwitchEntity):
 
     async def async_turn_off(self, **kwargs):
         await self._apply(self._config["off"], self._config["verify_off"])
+
+
+class PoolHivernageSwitch(PoolEntity, SwitchEntity):
+    """Met l'électrolyseur en hivernage : plus aucune I/O Modbus.
+
+    L'état est stocké dans les options de l'entrée ; le changement d'option
+    recharge l'intégration, les entités sont alors recréées et passent
+    `unavailable` (hivernage) ou remontent leurs valeurs (réveil).
+    """
+
+    _attr_icon = "mdi:snowflake"
+
+    def __init__(self, coordinator, entry, entry_id, model_label):
+        super().__init__(coordinator, entry_id, model_label)
+        self._entry = entry
+        self._attr_translation_key = "hivernage"
+        self._attr_unique_id = f"{entry_id}_hivernage"
+
+    @property
+    def available(self) -> bool:
+        # Toujours disponible : c'est le seul moyen de sortir de l'hivernage.
+        return True
+
+    @property
+    def is_on(self) -> bool:
+        return bool(self._entry.options.get(CONF_HIVERNER, False))
+
+    async def async_turn_on(self, **kwargs) -> None:
+        self._set(True)
+
+    async def async_turn_off(self, **kwargs) -> None:
+        self._set(False)
+
+    def _set(self, enabled: bool) -> None:
+        # Effet immédiat (plus d'I/O), puis persistance du choix ; l'update
+        # listener recharge l'intégration, ce qui réapplique l'état partout.
+        self.coordinator.hivernage = enabled
+        self.hass.config_entries.async_update_entry(
+            self._entry,
+            options={**self._entry.options, CONF_HIVERNER: enabled},
+        )
+        self.async_write_ha_state()
+        self.coordinator.async_update_listeners()

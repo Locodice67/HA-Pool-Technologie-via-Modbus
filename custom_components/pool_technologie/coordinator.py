@@ -22,7 +22,7 @@ class PoolDataCoordinator(DataUpdateCoordinator[dict[int, int]]):
     leaving stale values behind.
     """
 
-    def __init__(self, hass, handler, scan_interval, addresses):
+    def __init__(self, hass, handler, scan_interval, addresses, hivernage=False):
         super().__init__(
             hass,
             _LOGGER,
@@ -32,8 +32,12 @@ class PoolDataCoordinator(DataUpdateCoordinator[dict[int, int]]):
         )
         self.handler = handler
         self.addresses = tuple(addresses)
+        self.hivernage = bool(hivernage)
 
     async def _async_update_data(self) -> dict[int, int]:
+        if self.hivernage:
+            # Hivernage : aucune I/O Modbus, on garde les dernières données connues.
+            return self.data or {}
         try:
             return await self.hass.async_add_executor_job(self._read_all)
         except UpdateFailed:

@@ -33,6 +33,7 @@
       "init": {
         "title": "Options de l’électrolyseur Pool Technologie",
         "data": {
+          "hiverner": "Hivernage (coupe la communication Modbus)",
           "regulation_orp": "Régulation ORP (sonde ORP installée)",
           "flow_sensor": "Capteur de débit installé (détection défaut de débit)",
           "scan_interval": "Intervalle de rafraîchissement (secondes)",
@@ -127,6 +128,9 @@
       },
       "ph_auto": {
         "name": "Régulation pH automatique"
+      },
+      "hivernage": {
+        "name": "Hivernage"
       }
     }
   }

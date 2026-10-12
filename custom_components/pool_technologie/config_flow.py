@@ -11,6 +11,7 @@ from homeassistant.helpers import selector
 from .const import (
     CONF_FLOW_SENSOR,
     CONF_FRAMING,
+    CONF_HIVERNER,
     CONF_HOST,
     CONF_IGNORE_CONNECTION_ERROR,
     CONF_MODEL,
@@ -171,6 +172,10 @@ class PoolTechnologieOptionsFlow(config_entries.OptionsFlow):
         entry = self.config_entry
         schema = vol.Schema(
             {
+                vol.Required(
+                    CONF_HIVERNER,
+                    default=entry.options.get(CONF_HIVERNER, False),
+                ): bool,
                 vol.Required(
                     CONF_REGULATION_ORP,
                     default=entry.options.get(
