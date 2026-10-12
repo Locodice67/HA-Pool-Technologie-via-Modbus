@@ -1,13 +1,13 @@
 {
   "domain": "pool_technologie",
   "name": "Pool Technologie",
-  "codeowners": ["@profil404"],
+  "codeowners": ["@Locodice67"],
   "config_flow": true,
   "dependencies": [],
-  "documentation": "https://github.com/Profil404/HA-Pool-Technologie-via-Modbus",
+  "documentation": "https://github.com/Locodice67/HA-Pool-Technologie-via-Modbus",
   "integration_type": "device",
   "iot_class": "local_polling",
-  "issue_tracker": "https://github.com/Profil404/HA-Pool-Technologie-via-Modbus/issues",
+  "issue_tracker": "https://github.com/Locodice67/HA-Pool-Technologie-via-Modbus/issues",
   "requirements": ["pymodbus>=3.9.2"],
-  "version": "1.1.0-beta.2"
+  "version": "1.1.0-beta.3"
 }
